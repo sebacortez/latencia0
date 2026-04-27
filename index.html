@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>latencia0.cl — cloud status</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg: #080808; --s1: #111; --s2: #181818; --s3: #222;
+  --border: rgba(255,255,255,0.06); --border2: rgba(255,255,255,0.12);
+  --text: #efefef; --muted: #555; --hint: #1e1e1e;
+  --green: #00e87a; --green-d: rgba(0,232,122,0.1);
+  --amber: #f5a623; --amber-d: rgba(245,166,35,0.1);
+  --red: #ff3b3b; --red-d: rgba(255,59,59,0.1);
+  --mono: 'Space Mono', monospace; --sans: 'DM Sans', sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg);color:var(--text);font-family:var(--sans)}
+body{min-height:100vh}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse 80% 40% at 50% -5%,rgba(0,232,122,0.035),transparent)}
+
+.wrap{max-width:980px;margin:0 auto;padding:2.5rem 1.5rem 6rem;position:relative;z-index:1}
+
+nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:2.5rem}
+.nav-logo{font-family:var(--mono);font-size:11px;color:var(--green);letter-spacing:.2em;display:flex;align-items:center;gap:7px}
+.pulse{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.nav-time{font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+header{margin-bottom:2rem}
+h1{font-family:var(--mono);font-size:clamp(20px,3vw,32px);font-weight:700;line-height:1.15;margin-bottom:.5rem;letter-spacing:-.02em}
+h1 em{color:var(--green);font-style:normal}
+.sub{font-size:13px;color:var(--muted);font-weight:300;line-height:1.6}
+.last-update{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:8px}
+
+.global-bar{display:flex;gap:8px;align-items:center;background:var(--s1);border:1px solid var(--border2);border-radius:8px;padding:11px 16px;margin-bottom:2rem}
+.global-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;transition:background .3s}
+.global-dot.degraded{background:var(--amber)}
+.global-dot.outage{background:var(--red)}
+.global-label{font-family:var(--mono);font-size:11px;color:var(--muted);flex:1}
+.global-counts{display:flex;gap:14px}
+.gc{font-family:var(--mono);font-size:11px}
+.gc.ok{color:var(--green)}.gc.warn{color:var(--amber)}.gc.err{color:var(--red)}
+
+/* SECTION HEADERS */
+.sec-wrap{margin-bottom:2.5rem}
+.sec-label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.sec-count{background:var(--s2);border-radius:3px;padding:2px 6px;font-size:9px;color:var(--muted)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+
+/* CARD */
+.card{background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:16px 18px;position:relative;overflow:hidden;transition:border-color .25s}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:10px 10px 0 0;background:var(--border);transition:background .3s}
+.card.operational::before{background:var(--green)}
+.card.degraded::before{background:var(--amber)}
+.card.outage::before{background:var(--red)}
+.card.loading{opacity:.55}
+
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.card-name{display:flex;align-items:center;gap:8px}
+.card-icon{width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;background:var(--s2);flex-shrink:0}
+.card-title{font-family:var(--mono);font-size:12px;font-weight:700}
+.card-sub{font-size:10px;color:var(--muted);margin-top:1px}
+
+.status-pill{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+.status-pill.operational{background:var(--green-d);color:var(--green);border:1px solid rgba(0,232,122,.2)}
+.status-pill.degraded{background:var(--amber-d);color:var(--amber);border:1px solid rgba(245,166,35,.2)}
+.status-pill.outage{background:var(--red-d);color:var(--red);border:1px solid rgba(255,59,59,.2)}
+.status-pill.loading{background:var(--hint);color:var(--muted);border:1px solid var(--border)}
+
+/* REGIONS (AWS style) */
+.regions{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.region-row{display:flex;align-items:center;gap:7px}
+.region-label{font-family:var(--mono);font-size:9px;color:var(--muted);width:88px;flex-shrink:0}
+.region-bar-track{flex:1;height:3px;background:var(--hint);border-radius:2px;overflow:hidden}
+.region-bar-fill{height:100%;border-radius:2px;width:0;transition:width .8s ease}
+.region-val{font-family:var(--mono);font-size:9px;color:var(--muted);width:38px;text-align:right;flex-shrink:0}
+
+/* METRICS 2col */
+.card-metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}
+.mbox{background:var(--s2);border-radius:6px;padding:8px 10px}
+.mbox-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.06em;margin-bottom:3px}
+.mbox-val{font-family:var(--mono);font-size:15px;font-weight:700}
+.mbox-val.good{color:var(--green)}.mbox-val.ok{color:var(--amber)}.mbox-val.bad{color:var(--red)}.mbox-val.na{color:var(--muted);font-size:12px}
+
+.card-msg{font-size:11px;color:var(--muted);line-height:1.5;padding-top:9px;border-top:1px solid var(--border);min-height:28px}
+.card-msg.issue{color:var(--amber)}
+
+/* PRODUCTS (Atlassian style) */
+.products{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.prod-row{display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:var(--s2);border-radius:4px}
+.prod-name{font-family:var(--mono);font-size:9px;color:var(--muted)}
+.prod-status{font-family:var(--mono);font-size:9px}
+.prod-status.op{color:var(--green)}.prod-status.deg{color:var(--amber)}.prod-status.out{color:var(--red)}
+
+/* BTN */
+.btn{background:transparent;border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:11px;letter-spacing:.06em;padding:9px 16px;border-radius:6px;cursor:pointer;transition:all .15s}
+.btn:hover{border-color:var(--green);color:var(--green)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.spin{display:inline-block;width:9px;height:9px;border:1.5px solid var(--border2);border-top-color:var(--green);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:4px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.log-wrap{margin-top:2rem}
+.log-entries{}
+.log-row{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:10px}
+.log-t{color:var(--green);min-width:76px}.log-m{color:var(--muted)}
+
+footer{margin-top:4rem;padding-top:1.5rem;border-top:1px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--hint)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <div class="nav-logo"><span class="pulse"></span>LATENCIA0.CL</div>
+    <div class="nav-time" id="navTime">—</div>
+  </nav>
+
+  <header>
+    <h1>cloud <em>status</em> dashboard</h1>
+    <p class="sub">Estado en tiempo real + latencia desde Chile. Actualización automática cada 5 minutos.</p>
+    <p class="last-update" id="lastUpdate">última actualización: —</p>
+  </header>
+
+  <div class="global-bar">
+    <div class="global-dot" id="globalDot"></div>
+    <span class="global-label" id="globalLabel">cargando...</span>
+    <div class="global-counts">
+      <span class="gc ok" id="gcOk">— ok</span>
+      <span class="gc warn" id="gcWarn">— warn</span>
+      <span class="gc err" id="gcErr">— down</span>
+    </div>
+  </div>
+
+  <!-- CLOUD PROVIDERS -->
+  <div class="sec-wrap">
+    <div class="sec-label">☁ cloud providers <span class="sec-count" id="cnt-cloud">0/0</span></div>
+    <div class="grid" id="grid-cloud"></div>
+  </div>
+
+  <!-- SOCIAL & CONSUMER -->
+  <div class="sec-wrap">
+    <div class="sec-label">◎ plataformas & redes sociales <span class="sec-count" id="cnt-social">0/0</span></div>
+    <div class="grid" id="grid-social"></div>
+  </div>
+
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:2rem">
+    <button class="btn" id="refreshBtn" onclick="runAll()">↻ actualizar todo</button>
+    <span id="refreshStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></span>
+  </div>
+
+  <div class="log-wrap" id="logWrap" style="display:none">
+    <div class="sec-label">activity log</div>
+    <div class="log-entries" id="logEntries"></div>
+  </div>
+
+  <footer>latencia0.cl — cloud status dashboard — chile · datos desde APIs públicas de status + medición directa desde browser</footer>
+</div>
+
+<script>
+// ─── PLATFORM DEFINITIONS ───────────────────────────────────────────────────
+
+const CLOUD = [
+  {
+    id: 'aws', name: 'Amazon Web Services', short: 'AWS', icon: '☁', type: 'regions',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://health.aws.amazon.com/public/currentevents'),
+    regions: [
+      { label: 'us-east-1 (N. Virginia)', url: 'https://s3.us-east-1.amazonaws.com' },
+      { label: 'us-east-2 (Ohio)',        url: 'https://s3.us-east-2.amazonaws.com' },
+      { label: 'sa-east-1 (São Paulo)',   url: 'https://s3.sa-east-1.amazonaws.com' },
+    ]
+  },
+  {
+    id: 'azure', name: 'Microsoft Azure', short: 'Azure', icon: '▲', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://azure.status.microsoft/api/v2/status'),
+    targets: [
+      { label: 'portal',  url: 'https://portal.azure.com' },
+      { label: 'login',   url: 'https://login.microsoftonline.com' },
+    ]
+  },
+  {
+    id: 'gcp', name: 'Google Cloud Platform', short: 'GCP', icon: '◈', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://status.cloud.google.com/incidents.json'),
+    targets: [
+      { label: 'storage', url: 'https://storage.googleapis.com' },
+      { label: 'dns',     url: 'https://8.8.8.8' },
+    ]
+  },
+  {
+    id: 'oracle', name: 'Oracle Cloud Infrastructure', short: 'OCI', icon: '◉', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://ocistatus.oraclecloud.com/api/v2/status.json'),
+    targets: [
+      { label: 'console', url: 'https://cloud.oracle.com' },
+      { label: 'api',     url: 'https://objectstorage.sa-santiago-1.oraclecloud.com' },
+    ]
+  },
+  {
+    id: 'atlassian', name: 'Atlassian', short: 'Atlassian', icon: '⬡', type: 'products',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://bqlf8qjztdtr.statuspage.io/api/v2/components.json'),
+    products: ['Jira Software', 'Confluence', 'Jira Service Management', 'Bitbucket', 'Trello', 'Statuspage'],
+    targets: [
+      { label: 'jira',    url: 'https://jira.atlassian.com' },
+      { label: 'bitbucket', url: 'https://bitbucket.org' },
+    ]
+  },
+  {
+    id: 'sap', name: 'SAP Cloud / HANA', short: 'SAP', icon: '◆', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://sapcloudstatus.com/api/v2/status.json'),
+    targets: [
+      { label: 'launchpad', url: 'https://launchpad.support.sap.com' },
+      { label: 'hana',      url: 'https://hana.ondemand.com' },
+    ]
+  },
+  {
+    id: 'cloudflare', name: 'Cloudflare', short: 'Cloudflare', icon: '⬡', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.cloudflarestatus.com/api/v2/status.json'),
+    targets: [
+      { label: '1.1.1.1', url: 'https://1.1.1.1' },
+      { label: 'cdn',     url: 'https://cdnjs.cloudflare.com' },
+    ]
+  },
+];
+
+const SOCIAL = [
+  {
+    id: 'google', name: 'Google', short: 'Google', icon: 'G', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.google.com/appsstatus/json/en'),
+    targets: [
+      { label: 'search', url: 'https://www.google.com' },
+      { label: 'apis',   url: 'https://www.googleapis.com' },
+    ]
+  },
+  {
+    id: 'youtube', name: 'YouTube', short: 'YouTube', icon: '▶', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.google.com/appsstatus/json/en'),
+    targets: [
+      { label: 'web',  url: 'https://www.youtube.com' },
+      { label: 'cdn',  url: 'https://i.ytimg.com' },
+    ]
+  },
+  {
+    id: 'instagram', name: 'Instagram', short: 'Instagram', icon: '◎', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://metastatus.com/api/v2/status.json'),
+    targets: [
+      { label: 'web',  url: 'https://www.instagram.com' },
+      { label: 'cdn',  url: 'https://scontent.cdninstagram.com' },
+    ]
+  },
+  {
+    id: 'whatsapp', name: 'WhatsApp', short: 'WhatsApp', icon: '◈', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://metastatus.com/api/v2/status.json'),
+    targets: [
+      { label: 'web',  url: 'https://web.whatsapp.com' },
+      { label: 'api',  url: 'https://www.whatsapp.com' },
+    ]
+  },
+  {
+    id: 'facebook', name: 'Facebook', short: 'Facebook', icon: 'f', type: 'standard',
+    statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://metastatus.com/api/v2/status.json'),
+    targets: [
+      { label: 'web',  url: 'https://www.facebook.com' },
+      { label: 'cdn',  url: 'https://static.xx.fbcdn.net' },
+    ]
+  },
+];
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let state = {};
+let logs  = [];
+
+// ─── CLOCK ───────────────────────────────────────────────────────────────────
+setInterval(() => {
+  document.getElementById('navTime').textContent =
+    new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) + ' CLT';
+}, 1000);
+
+// ─── LOG ─────────────────────────────────────────────────────────────────────
+function log(msg) {
+  const t = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  logs.push({t,msg});
+  document.getElementById('logWrap').style.display = 'block';
+  document.getElementById('logEntries').innerHTML =
+    logs.slice(-16).reverse().map(l =>
+      `<div class="log-row"><span class="log-t">${l.t}</span><span class="log-m">${l.msg}</span></div>`
+    ).join('');
+}
+
+// ─── LATENCY ─────────────────────────────────────────────────────────────────
+async function measureOne(url) {
+  const times = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = performance.now();
+    try { await fetch(url + '/favicon.ico?_=' + Date.now(), {mode:'no-cors',cache:'no-store'}); } catch(_){}
+    times.push(Math.round(performance.now() - t0));
+    await new Promise(r => setTimeout(r, 100));
+  }
+  times.sort((a,b)=>a-b);
+  return times[1];
+}
+
+function latClass(ms) {
+  if (!ms) return 'na';
+  return ms <= 80 ? 'good' : ms <= 180 ? 'ok' : 'bad';
+}
+function barColor(ms) {
+  if (!ms) return 'var(--muted)';
+  return ms <= 80 ? 'var(--green)' : ms <= 180 ? 'var(--amber)' : 'var(--red)';
+}
+function barW(ms, max=400) {
+  return ms ? Math.min(100, Math.round((ms/max)*100)) : 0;
+}
+
+// ─── STATUS FETCH ─────────────────────────────────────────────────────────────
+async function fetchStatus(p) {
+  try {
+    const res  = await fetch(p.statusApi, {cache:'no-store'});
+    const json = await res.json();
+    const body = typeof json.contents === 'string' ? JSON.parse(json.contents) : json;
+
+    // statuspage.io format
+    if (body?.status?.indicator !== undefined) {
+      const ind = body.status.indicator;
+      if (ind === 'none')                     return {status:'operational', msg:'Todos los sistemas operativos.'};
+      if (ind === 'minor')                    return {status:'degraded',    msg: body.status.description || 'Degradación menor detectada.'};
+      if (ind === 'major'||ind==='critical')  return {status:'outage',      msg: body.status.description || 'Interrupción activa.'};
+    }
+
+    // statuspage.io components (Atlassian)
+    if (body?.components && p.id === 'atlassian') {
+      const comps = body.components;
+      const issues = comps.filter(c => c.status !== 'operational');
+      if (!issues.length) return {status:'operational', msg:'Todos los productos operativos.', components: comps};
+      return {status:'degraded', msg: issues.map(c=>c.name).join(', ') + ' con degradación.', components: comps};
+    }
+
+    // GCP incidents array
+    if (Array.isArray(body) && p.id === 'gcp') {
+      const active = body.filter(i => !i.end);
+      if (!active.length) return {status:'operational', msg:'Sin incidentes activos.'};
+      return {status:'degraded', msg: (active[0].external_desc||'Incidente activo.').substring(0,90)};
+    }
+
+    // Azure
+    if (body?.status?.message !== undefined) {
+      const m = (body.status.message||'').toLowerCase();
+      if (m.includes('no active') || m.includes('good') || m.includes('available'))
+        return {status:'operational', msg:'Sin eventos activos.'};
+      return {status:'degraded', msg:(body.status.message||'Revisando...').substring(0,90)};
+    }
+
+    return {status:'operational', msg:'Sin incidentes detectados.'};
+  } catch(e) {
+    return {status:'operational', msg:'Sin incidentes detectados.'};
+  }
+}
+
+// ─── ATLASSIAN PRODUCTS ───────────────────────────────────────────────────────
+function atlassianProducts(comps, wanted) {
+  if (!comps) return wanted.map(n=>({name:n,status:'operational'}));
+  return wanted.map(name => {
+    const found = comps.find(c => c.name.toLowerCase().includes(name.toLowerCase().split(' ')[0]));
+    return {name, status: found ? found.status : 'operational'};
+  });
+}
+
+// ─── RENDER ──────────────────────────────────────────────────────────────────
+function renderCard(p, data) {
+  const s   = data?.status   || 'loading';
+  const msg = data?.msg      || 'cargando...';
+  const lats = data?.latencies || {};
+
+  const isOk = msg => ['Sin incidentes reportados.','Sin incidentes activos.','Sin eventos activos.','Todos los sistemas operativos.','Sin incidentes detectados.','Todos los productos operativos.'].includes(msg);
+
+  // ── AWS regions card ──
+  if (p.type === 'regions') {
+    const rows = p.regions.map(r => {
+      const ms = lats[r.label] || null;
+      return `<div class="region-row">
+        <span class="region-label">${r.label}</span>
+        <div class="region-bar-track"><div class="region-bar-fill" style="width:${barW(ms)}%;background:${barColor(ms)}"></div></div>
+        <span class="region-val">${ms ? ms+'ms' : '—'}</span>
+      </div>`;
+    }).join('');
+    const avgMs = Object.values(lats).filter(Boolean);
+    const avg   = avgMs.length ? Math.round(avgMs.reduce((a,b)=>a+b,0)/avgMs.length) : null;
+    return `<div class="card ${s}" id="card-${p.id}">
+      <div class="card-top">
+        <div class="card-name">
+          <div class="card-icon">${p.icon}</div>
+          <div><div class="card-title">${p.short}</div><div class="card-sub">${p.name}</div></div>
+        </div>
+        <span class="status-pill ${s}">${s==='operational'?'ok':s==='degraded'?'warn':s==='outage'?'down':'...'}</span>
+      </div>
+      <div class="card-metrics">
+        <div class="mbox"><div class="mbox-label">lat. promedio</div><div class="mbox-val ${latClass(avg)}">${avg?avg+'ms':'—'}</div></div>
+        <div class="mbox"><div class="mbox-label">regiones</div><div class="mbox-val ${s==='operational'?'good':s==='degraded'?'ok':'bad'}">${p.regions.length} / ${p.regions.length}</div></div>
+      </div>
+      <div class="regions">${rows}</div>
+      <div class="card-msg ${isOk(msg)?'':'issue'}">${msg}</div>
+    </div>`;
+  }
+
+  // ── Atlassian products card ──
+  if (p.type === 'products') {
+    const prods = atlassianProducts(data?.components, p.products);
+    const prodRows = prods.map(pr => {
+      const cls = pr.status==='operational'?'op':pr.status==='degraded'?'deg':'out';
+      const label = pr.status==='operational'?'ok':pr.status==='degraded'?'warn':'down';
+      return `<div class="prod-row"><span class="prod-name">${pr.name}</span><span class="prod-status ${cls}">● ${label}</span></div>`;
+    }).join('');
+    const avgMs2 = Object.values(lats).filter(Boolean);
+    const avg2   = avgMs2.length ? Math.round(avgMs2.reduce((a,b)=>a+b,0)/avgMs2.length) : null;
+    return `<div class="card ${s}" id="card-${p.id}">
+      <div class="card-top">
+        <div class="card-name">
+          <div class="card-icon">${p.icon}</div>
+          <div><div class="card-title">${p.short}</div><div class="card-sub">${p.name}</div></div>
+        </div>
+        <span class="status-pill ${s}">${s==='operational'?'ok':s==='degraded'?'warn':s==='outage'?'down':'...'}</span>
+      </div>
+      <div class="card-metrics">
+        <div class="mbox"><div class="mbox-label">lat. avg</div><div class="mbox-val ${latClass(avg2)}">${avg2?avg2+'ms':'—'}</div></div>
+        <div class="mbox"><div class="mbox-label">productos</div><div class="mbox-val ${s==='operational'?'good':'ok'}">${prods.filter(x=>x.status==='operational').length}/${prods.length} ok</div></div>
+      </div>
+      <div class="products">${prodRows}</div>
+      <div class="card-msg ${isOk(msg)?'':'issue'}">${msg}</div>
+    </div>`;
+  }
+
+  // ── Standard card ──
+  const tgts  = p.targets || [];
+  const rows2 = tgts.map(t => {
+    const ms = lats[t.label]||null;
+    return `<div class="region-row">
+      <span class="region-label">${t.label}</span>
+      <div class="region-bar-track"><div class="region-bar-fill" style="width:${barW(ms)}%;background:${barColor(ms)}"></div></div>
+      <span class="region-val">${ms?ms+'ms':'—'}</span>
+    </div>`;
+  }).join('');
+  const avgMs3 = Object.values(lats).filter(Boolean);
+  const avg3   = avgMs3.length ? Math.round(avgMs3.reduce((a,b)=>a+b,0)/avgMs3.length) : null;
+  return `<div class="card ${s}" id="card-${p.id}">
+    <div class="card-top">
+      <div class="card-name">
+        <div class="card-icon">${p.icon}</div>
+        <div><div class="card-title">${p.short}</div><div class="card-sub">${p.name}</div></div>
+      </div>
+      <span class="status-pill ${s}">${s==='operational'?'ok':s==='degraded'?'warn':s==='outage'?'down':'...'}</span>
+    </div>
+    <div class="card-metrics">
+      <div class="mbox"><div class="mbox-label">lat. promedio</div><div class="mbox-val ${latClass(avg3)}">${avg3?avg3+'ms':'—'}</div></div>
+      <div class="mbox"><div class="mbox-label">estado</div><div class="mbox-val ${s==='operational'?'good':s==='degraded'?'ok':'bad'}">${s==='operational'?'● ok':s==='degraded'?'◐ warn':'○ down'}</div></div>
+    </div>
+    <div class="regions">${rows2}</div>
+    <div class="card-msg ${isOk(msg)?'':'issue'}">${msg}</div>
+  </div>`;
+}
+
+// ─── INIT SKELETONS ───────────────────────────────────────────────────────────
+function initGrids() {
+  document.getElementById('grid-cloud').innerHTML  = CLOUD.map(p=>renderCard(p,{status:'loading',latencies:{},msg:'cargando...'})).join('');
+  document.getElementById('grid-social').innerHTML = SOCIAL.map(p=>renderCard(p,{status:'loading',latencies:{},msg:'cargando...'})).join('');
+}
+
+// ─── GLOBAL STATUS ────────────────────────────────────────────────────────────
+function updateGlobal() {
+  const all = [...CLOUD,...SOCIAL];
+  const ok   = all.filter(p=>state[p.id]?.status==='operational').length;
+  const warn = all.filter(p=>state[p.id]?.status==='degraded').length;
+  const err  = all.filter(p=>state[p.id]?.status==='outage').length;
+  const total = all.length;
+
+  document.getElementById('gcOk').textContent   = ok   + ' ok';
+  document.getElementById('gcWarn').textContent = warn + ' warn';
+  document.getElementById('gcErr').textContent  = err  + ' down';
+
+  // section counters
+  const cok  = (grp) => grp.filter(p=>state[p.id]?.status==='operational').length;
+  document.getElementById('cnt-cloud').textContent  = cok(CLOUD)  + '/' + CLOUD.length;
+  document.getElementById('cnt-social').textContent = cok(SOCIAL) + '/' + SOCIAL.length;
+
+  const dot = document.getElementById('globalDot');
+  const lbl = document.getElementById('globalLabel');
+  if (err  > 0) { dot.className='global-dot outage';   lbl.textContent=`${err} plataforma(s) con interrupción activa`; }
+  else if (warn>0){ dot.className='global-dot degraded'; lbl.textContent=`${warn} plataforma(s) con degradación de servicio`; }
+  else if (ok===total){ dot.className='global-dot'; lbl.textContent='todos los sistemas operativos'; }
+  else { dot.className='global-dot'; lbl.textContent='verificando estado...'; }
+}
+
+// ─── RUN ONE PLATFORM ─────────────────────────────────────────────────────────
+async function runPlatform(p, gridId) {
+  log(`→ ${p.short}: midiendo latencia`);
+  const targets = p.type==='regions' ? p.regions : (p.targets||[]);
+  const latencies = {};
+  for (const t of targets) {
+    const ms = await measureOne(t.url);
+    latencies[t.label] = ms;
+    log(`  ${p.short} / ${t.label}: ${ms}ms`);
+  }
+
+  const result = await fetchStatus(p);
+  log(`  ${p.short} status: ${result.status}`);
+
+  state[p.id] = {...result, latencies};
+
+  const el = document.getElementById('card-' + p.id);
+  if (el) el.outerHTML = renderCard(p, state[p.id]);
+  updateGlobal();
+}
+
+// ─── RUN ALL ──────────────────────────────────────────────────────────────────
+async function runAll() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> actualizando...';
+  document.getElementById('refreshStatus').textContent = '';
+
+  log('▶ iniciando — ' + (CLOUD.length+SOCIAL.length) + ' plataformas');
+  initGrids();
+
+  const all = [
+    ...CLOUD.map(p=>({p,g:'cloud'})),
+    ...SOCIAL.map(p=>({p,g:'social'}))
+  ];
+
+  // groups of 3 in parallel
+  for (let i = 0; i < all.length; i += 3) {
+    await Promise.all(all.slice(i,i+3).map(({p,g}) => runPlatform(p,g)));
+  }
+
+  const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.getElementById('lastUpdate').textContent = 'última actualización: ' + now;
+  document.getElementById('refreshStatus').textContent = 'completado ' + now;
+  log('✓ ciclo completo');
+  btn.disabled = false;
+  btn.innerHTML = '↻ actualizar todo';
+}
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+initGrids();
+runAll();
+setInterval(runAll, 5 * 60 * 1000);
+</script>
+</body>
+</html>
