@@ -111,6 +111,23 @@ h1 em{color:var(--green);font-style:normal}
 .log-row{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:10px}
 .log-t{color:var(--green);min-width:76px}.log-m{color:var(--muted)}
 
+/* VIRGINIA SERVICES */
+.grid-virginia{grid-template-columns:1fr}
+.virginia-services{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:10px}
+@media(max-width:560px){.virginia-services{grid-template-columns:1fr}}
+.vsvc-row{display:flex;align-items:center;gap:7px;padding:6px 4px;border-bottom:1px solid var(--border)}
+.vsvc-row:last-child{border-bottom:none}
+.vsvc-icon{font-size:11px;width:16px;text-align:center;flex-shrink:0;color:var(--muted)}
+.vsvc-name{font-family:var(--mono);font-size:9px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vsvc-bar-track{width:50px;height:3px;background:var(--hint);border-radius:2px;overflow:hidden;flex-shrink:0}
+.vsvc-bar-fill{height:100%;border-radius:2px}
+.vsvc-ms{font-family:var(--mono);font-size:9px;color:var(--muted);width:34px;text-align:right;flex-shrink:0}
+.vsvc-pill{font-family:var(--mono);font-size:8px;letter-spacing:.06em;padding:2px 5px;border-radius:10px;flex-shrink:0}
+.vsvc-pill.operational{background:var(--green-d);color:var(--green);border:1px solid rgba(0,232,122,.2)}
+.vsvc-pill.degraded{background:var(--amber-d);color:var(--amber);border:1px solid rgba(245,166,35,.2)}
+.vsvc-pill.outage{background:var(--red-d);color:var(--red);border:1px solid rgba(255,59,59,.2)}
+.vsvc-pill.loading{background:var(--hint);color:var(--muted);border:1px solid var(--border)}
+
 /* SUBSCRIPTION */
 .sub-wrap{margin-top:3rem;margin-bottom:2rem;background:var(--s1);border:1px solid var(--border2);border-radius:12px;padding:24px 28px}
 .sub-title{font-family:var(--mono);font-size:13px;font-weight:700;margin-bottom:6px}
@@ -157,6 +174,12 @@ footer{margin-top:4rem;padding-top:1.5rem;border-top:1px solid var(--border);fon
   <div class="sec-wrap">
     <div class="sec-label">☁ cloud providers <span class="sec-count" id="cnt-cloud">0/0</span></div>
     <div class="grid" id="grid-cloud"></div>
+  </div>
+
+  <!-- AWS NORTH VIRGINIA -->
+  <div class="sec-wrap">
+    <div class="sec-label">⚑ aws north virginia — us-east-1 <span class="sec-count" id="cnt-virginia">0/10</span></div>
+    <div class="grid grid-virginia" id="grid-virginia"></div>
   </div>
 
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:2rem">
@@ -248,8 +271,30 @@ const CLOUD = [
 ];
 
 
+// ─── AWS NORTH VIRGINIA — TOP 10 SERVICES ────────────────────────────────────
+const AWS_VIRGINIA = {
+  id: 'aws-virginia',
+  name: 'Amazon Web Services — North Virginia',
+  short: 'AWS us-east-1',
+  region: 'us-east-1',
+  statusApi: 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://health.aws.amazon.com/public/currentevents'),
+  services: [
+    { id: 'EC2',        name: 'Amazon EC2',         icon: '⬡', url: 'https://ec2.us-east-1.amazonaws.com' },
+    { id: 'S3',         name: 'Amazon S3',           icon: '◫', url: 'https://s3.us-east-1.amazonaws.com' },
+    { id: 'LAMBDA',     name: 'AWS Lambda',          icon: '⚡', url: 'https://lambda.us-east-1.amazonaws.com' },
+    { id: 'RDS',        name: 'Amazon RDS',          icon: '◉', url: 'https://rds.us-east-1.amazonaws.com' },
+    { id: 'CLOUDFRONT', name: 'Amazon CloudFront',   icon: '◈', url: 'https://cloudfront.amazonaws.com' },
+    { id: 'DYNAMODB',   name: 'Amazon DynamoDB',     icon: '◆', url: 'https://dynamodb.us-east-1.amazonaws.com' },
+    { id: 'SQS',        name: 'Amazon SQS',          icon: '◎', url: 'https://sqs.us-east-1.amazonaws.com' },
+    { id: 'ECS',        name: 'Amazon ECS',          icon: '▣', url: 'https://ecs.us-east-1.amazonaws.com' },
+    { id: 'APIGATEWAY', name: 'Amazon API Gateway',  icon: '⊞', url: 'https://apigateway.us-east-1.amazonaws.com' },
+    { id: 'CLOUDWATCH', name: 'Amazon CloudWatch',   icon: '◐', url: 'https://monitoring.us-east-1.amazonaws.com' },
+  ]
+};
+
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let state = {};
+let virginiaState = {};
 let logs  = [];
 
 // ─── CLOCK ───────────────────────────────────────────────────────────────────
@@ -440,9 +485,121 @@ function renderCard(p, data) {
   </div>`;
 }
 
+// ─── VIRGINIA STATUS FETCH ────────────────────────────────────────────────────
+async function fetchVirginiaStatus() {
+  const statusMap = {};
+  AWS_VIRGINIA.services.forEach(s => statusMap[s.id] = 'operational');
+
+  try {
+    const res  = await fetch(AWS_VIRGINIA.statusApi, {cache:'no-store'});
+    const json = await res.json();
+    const body = typeof json.contents === 'string' ? JSON.parse(json.contents) : json;
+
+    const events = body?.eventDetails || body?.events || body?.data?.eventDetails || [];
+    if (Array.isArray(events)) {
+      for (const ev of events) {
+        const svcRaw    = (ev.service || '').toUpperCase().replace(/-/g,'');
+        const region    = ev.region || '';
+        const statusCode = ev.statusCode || ev.status || '';
+        const category  = ev.eventTypeCategory || '';
+
+        if ((region === 'us-east-1' || region === '') && statusCode === 'open') {
+          const matched = AWS_VIRGINIA.services.find(s =>
+            svcRaw === s.id || svcRaw.includes(s.id) || s.id.includes(svcRaw)
+          );
+          if (matched && statusMap[matched.id] === 'operational') {
+            statusMap[matched.id] = category === 'issue' ? 'outage' : 'degraded';
+          }
+        }
+      }
+    }
+  } catch(_) {}
+
+  return statusMap;
+}
+
+// ─── RENDER VIRGINIA CARD ─────────────────────────────────────────────────────
+function renderVirginiaCard(data) {
+  const lats     = data?.latencies       || {};
+  const statuses = data?.serviceStatuses || {};
+  const loading  = data?.loading         || false;
+
+  const overallStatus = loading ? 'loading'
+    : Object.values(statuses).some(s => s === 'outage')   ? 'outage'
+    : Object.values(statuses).some(s => s === 'degraded') ? 'degraded'
+    : 'operational';
+
+  const okCount = Object.values(statuses).filter(s => s === 'operational').length;
+  const total   = AWS_VIRGINIA.services.length;
+  const avgArr  = Object.values(lats).filter(Boolean);
+  const avg     = avgArr.length ? Math.round(avgArr.reduce((a,b)=>a+b,0)/avgArr.length) : null;
+
+  const sLabel = overallStatus==='operational'?'ok':overallStatus==='degraded'?'warn':overallStatus==='outage'?'down':'...';
+
+  const serviceRows = AWS_VIRGINIA.services.map(svc => {
+    const ms = lats[svc.id] || null;
+    const st = loading ? 'loading' : (statuses[svc.id] || 'operational');
+    const pillLabel = st==='operational'?'ok':st==='degraded'?'warn':st==='outage'?'down':'...';
+    return `<div class="vsvc-row">
+      <span class="vsvc-icon">${svc.icon}</span>
+      <span class="vsvc-name">${svc.name}</span>
+      <div class="vsvc-bar-track"><div class="vsvc-bar-fill" style="width:${barW(ms)}%;background:${barColor(ms)}"></div></div>
+      <span class="vsvc-ms">${ms?ms+'ms':'—'}</span>
+      <span class="vsvc-pill ${st}">${pillLabel}</span>
+    </div>`;
+  }).join('');
+
+  const msg = loading
+    ? 'cargando...'
+    : overallStatus === 'operational'
+      ? 'Todos los servicios operativos en us-east-1.'
+      : `${total - okCount} servicio(s) con incidencias en us-east-1.`;
+
+  return `<div class="card ${loading?'loading':overallStatus}" id="card-aws-virginia">
+    <div class="card-top">
+      <div class="card-name">
+        <div class="card-icon">☁</div>
+        <div><div class="card-title">AWS us-east-1</div><div class="card-sub">N. Virginia — top 10 servicios</div></div>
+      </div>
+      <span class="status-pill ${loading?'loading':overallStatus}">${sLabel}</span>
+    </div>
+    <div class="card-metrics">
+      <div class="mbox"><div class="mbox-label">lat. avg us-east-1</div><div class="mbox-val ${latClass(avg)}">${avg?avg+'ms':'—'}</div></div>
+      <div class="mbox"><div class="mbox-label">servicios ok</div><div class="mbox-val ${overallStatus==='operational'?'good':overallStatus==='degraded'?'ok':'bad'}">${loading?'—':okCount+'/'+total}</div></div>
+    </div>
+    <div class="virginia-services">${serviceRows}</div>
+    <div class="card-msg ${overallStatus!=='operational'&&!loading?'issue':''}">${msg}</div>
+  </div>`;
+}
+
+// ─── RUN VIRGINIA ─────────────────────────────────────────────────────────────
+async function runVirginia() {
+  log('→ AWS Virginia: midiendo 10 servicios en us-east-1');
+
+  // Medir latencias en paralelo
+  const latencies = {};
+  await Promise.all(AWS_VIRGINIA.services.map(async svc => {
+    const ms = await measureOne(svc.url);
+    latencies[svc.id] = ms;
+    log(`  Virginia / ${svc.id}: ${ms}ms`);
+  }));
+
+  const serviceStatuses = await fetchVirginiaStatus();
+  log('  Virginia status: obtenido');
+
+  virginiaState = { latencies, serviceStatuses };
+
+  const el = document.getElementById('card-aws-virginia');
+  if (el) el.outerHTML = renderVirginiaCard(virginiaState);
+
+  const ok = Object.values(serviceStatuses).filter(s => s === 'operational').length;
+  document.getElementById('cnt-virginia').textContent = ok + '/' + AWS_VIRGINIA.services.length;
+}
+
 // ─── INIT SKELETONS ───────────────────────────────────────────────────────────
 function initGrids() {
-  document.getElementById('grid-cloud').innerHTML = CLOUD.map(p=>renderCard(p,{status:'loading',latencies:{},msg:'cargando...'})).join('');
+  document.getElementById('grid-cloud').innerHTML    = CLOUD.map(p=>renderCard(p,{status:'loading',latencies:{},msg:'cargando...'})).join('');
+  document.getElementById('grid-virginia').innerHTML = renderVirginiaCard({loading:true});
 }
 
 // ─── GLOBAL STATUS ────────────────────────────────────────────────────────────
@@ -497,17 +654,19 @@ async function runAll() {
   btn.innerHTML = '<span class="spin"></span> actualizando...';
   document.getElementById('refreshStatus').textContent = '';
 
-  log('▶ iniciando — ' + CLOUD.length + ' plataformas');
+  log('▶ iniciando — ' + CLOUD.length + ' plataformas + Virginia');
   initGrids();
 
   const all = [
     ...CLOUD.map(p=>({p,g:'cloud'}))
   ];
 
-  // groups of 3 in parallel
+  // groups of 3 in parallel, Virginia corre junto al primer grupo
+  const virginiaPromise = runVirginia();
   for (let i = 0; i < all.length; i += 3) {
     await Promise.all(all.slice(i,i+3).map(({p,g}) => runPlatform(p,g)));
   }
+  await virginiaPromise;
 
   const now = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   document.getElementById('lastUpdate').textContent = 'última actualización: ' + now;
